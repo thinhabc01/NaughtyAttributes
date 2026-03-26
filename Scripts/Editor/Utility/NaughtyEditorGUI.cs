@@ -26,6 +26,8 @@ namespace NaughtyAttributes.Editor
 
         public static void PropertyField_Layout(SerializedProperty property, bool includeChildren)
         {
+            DrawPropertyHorizontalLines_Layout(property);
+
             Rect dummyRect = new Rect();
             PropertyField_Implementation(dummyRect, property, includeChildren, DrawPropertyField_Layout);
         }
@@ -582,6 +584,16 @@ namespace NaughtyAttributes.Editor
                 .GetCustomAttributes(typeof(HorizontalLineAttribute), true)
                 .OfType<HorizontalLineAttribute>()
                 .ToArray();
+
+            foreach (var lineAttribute in lineAttributes)
+            {
+                HorizontalLine_Layout(lineAttribute.Height, lineAttribute.Color.GetColor());
+            }
+        }
+
+        private static void DrawPropertyHorizontalLines_Layout(SerializedProperty property)
+        {
+            HorizontalLineAttribute[] lineAttributes = PropertyUtility.GetPropertyAttributes<HorizontalLineAttribute>(property);
 
             foreach (var lineAttribute in lineAttributes)
             {

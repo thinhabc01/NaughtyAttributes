@@ -17,13 +17,55 @@ namespace NaughtyAttributes.Editor
 
         public static T[] GetAttributes<T>(SerializedProperty property) where T : class
         {
-            FieldInfo fieldInfo = ReflectionUtility.GetField(GetTargetObjectWithProperty(property), property.name);
+            List<T> attributes = new List<T>();
+
+            foreach (T attribute in GetFieldAttributes<T>(property))
+            {
+                attributes.Add(attribute);
+            }
+
+            foreach (T attribute in GetPropertyAttributes<T>(property))
+            {
+                attributes.Add(attribute);
+            }
+
+            return attributes.ToArray();
+        }
+
+        public static T[] GetPropertyAttributes<T>(SerializedProperty property) where T : class
+        {
+            PropertyInfo propertyInfo = GetPropertyInfo(property);
+            if (propertyInfo == null)
+            {
+                return new T[] { };
+            }
+
+            object[] rawAttributes = propertyInfo.GetCustomAttributes(typeof(T), true);
+            T[] attributes = new T[rawAttributes.Length];
+            for (int i = 0; i < rawAttributes.Length; i++)
+            {
+                attributes[i] = rawAttributes[i] as T;
+            }
+
+            return attributes;
+        }
+
+        public static T[] GetFieldAttributes<T>(SerializedProperty property) where T : class
+        {
+            FieldInfo fieldInfo = GetFieldInfo(property);
             if (fieldInfo == null)
             {
                 return new T[] { };
             }
 
-            return (T[])fieldInfo.GetCustomAttributes(typeof(T), true);
+            object[] rawAttributes = fieldInfo.GetCustomAttributes(typeof(T), true);
+            T[] attributes = new T[rawAttributes.Length];
+            for (int i = 0; i < rawAttributes.Length; i++)
+            {
+                attributes[i] = rawAttributes[i] as T;
+            }
+
+            return attributes;
         }
 
         public static GUIContent GetLabel(SerializedProperty property)
@@ -437,6 +479,49 @@ namespace NaughtyAttributes.Editor
             }
 
             return enumerator.Current;
+        }
+
+        private static FieldInfo GetFieldInfo(SerializedProperty property)
+        {
+            object target = GetTargetObjectWithProperty(property);
+            return ReflectionUtility.GetField(target, property.name);
+        }
+
+        private static PropertyInfo GetPropertyInfo(SerializedProperty property)
+        {
+            FieldInfo fieldInfo = GetFieldInfo(property);
+            if (fieldInfo == null)
+            {
+                return null;
+            }
+
+            if (!TryGetPropertyNameFromBackingFieldName(fieldInfo.Name, out string propertyName))
+            {
+                return null;
+            }
+
+            object target = GetTargetObjectWithProperty(property);
+            return ReflectionUtility.GetProperty(target, propertyName);
+        }
+
+        private static bool TryGetPropertyNameFromBackingFieldName(string backingFieldName, out string propertyName)
+        {
+            const string prefix = "<";
+            const string suffix = ">k__BackingField";
+
+            if (backingFieldName.StartsWith(prefix, StringComparison.Ordinal) &&
+                backingFieldName.EndsWith(suffix, StringComparison.Ordinal) &&
+                backingFieldName.Length > prefix.Length + suffix.Length)
+            {
+                propertyName = backingFieldName.Substring(
+                    prefix.Length,
+                    backingFieldName.Length - prefix.Length - suffix.Length);
+
+                return true;
+            }
+
+            propertyName = null;
+            return false;
         }
     }
 }
