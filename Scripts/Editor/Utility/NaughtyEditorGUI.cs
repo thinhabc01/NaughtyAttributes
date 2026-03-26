@@ -271,6 +271,8 @@ namespace NaughtyAttributes.Editor
 
         public static void NativeProperty_Layout(UnityEngine.Object target, PropertyInfo property)
         {
+            DrawHorizontalLines_Layout(property);
+
             object value = property.GetValue(target, null);
 
             if (value == null)
@@ -287,6 +289,8 @@ namespace NaughtyAttributes.Editor
 
         public static void NonSerializedField_Layout(UnityEngine.Object target, FieldInfo field)
         {
+            DrawHorizontalLines_Layout(field);
+
             object value = field.GetValue(target);
 
             if (value == null)
@@ -305,6 +309,14 @@ namespace NaughtyAttributes.Editor
         {
             rect.height = height;
             EditorGUI.DrawRect(rect, color);
+        }
+
+        public static void HorizontalLine_Layout(float height, Color color)
+        {
+            Rect rect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight + height);
+            rect = EditorGUI.IndentedRect(rect);
+            rect.y += EditorGUIUtility.singleLineHeight / 3.0f;
+            HorizontalLine(rect, height, color);
         }
 
         public static void HelpBox(Rect rect, string message, MessageType type, UnityEngine.Object context = null, bool logToConsole = false)
@@ -562,6 +574,19 @@ namespace NaughtyAttributes.Editor
             tex.SetPixels(pixels);
             tex.Apply();
             return tex;
+        }
+
+        private static void DrawHorizontalLines_Layout(ICustomAttributeProvider memberInfo)
+        {
+            HorizontalLineAttribute[] lineAttributes = memberInfo
+                .GetCustomAttributes(typeof(HorizontalLineAttribute), true)
+                .OfType<HorizontalLineAttribute>()
+                .ToArray();
+
+            foreach (var lineAttribute in lineAttributes)
+            {
+                HorizontalLine_Layout(lineAttribute.Height, lineAttribute.Color.GetColor());
+            }
         }
     }
 }

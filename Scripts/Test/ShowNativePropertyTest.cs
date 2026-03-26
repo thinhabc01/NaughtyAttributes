@@ -5,6 +5,16 @@ namespace NaughtyAttributes.Test
     public class ShowNativePropertyTest : MonoBehaviour
     {
         [ShowNativeProperty]
+        [HorizontalLine(color: EColor.Green)]
+        private int PropertiesWithLine
+        {
+            get
+            {
+                return 3;
+            }
+        }
+
+        [ShowNativeProperty]
         private Transform Transform
         {
             get
