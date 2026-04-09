@@ -1,6 +1,5 @@
 using System.Collections;
 using UnityEngine;
-//Test
 namespace NaughtyAttributes.Test
 {
     public class ButtonTest : MonoBehaviour
