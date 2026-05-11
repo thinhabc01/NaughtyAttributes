@@ -1,0 +1,150 @@
+name: 📓 Generate Devlog (A → B)
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_commit:
+        description: "Commit bắt đầu — Commit A (excluded)"
+        required: true
+        type: string
+      to_commit:
+        description: "Commit kết thúc — Commit B (default: HEAD)"
+        required: false
+        default: "HEAD"
+        type: string
+
+jobs:
+  generate-devlog:
+    name: Generate Bilingual Devlog
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ─────────────────────────────────────────────
+      # 1. Collect git log between A and B
+      # ─────────────────────────────────────────────
+      - name: 📋 Collect commits
+        id: gitlog
+        run: |
+          FROM="${{ github.event.inputs.from_commit }}"
+          TO="${{ github.event.inputs.to_commit }}"
+
+          echo "════════════════════════════════════════"
+          echo "  Range: $FROM .. $TO"
+          echo "════════════════════════════════════════"
+
+          # Verify commits exist
+          git rev-parse --verify "$FROM" > /dev/null 2>&1 || \
+            { echo "❌ Commit '$FROM' not found"; exit 1; }
+          git rev-parse --verify "$TO" > /dev/null 2>&1 || \
+            { echo "❌ Commit '$TO' not found"; exit 1; }
+
+          # Build the log (short hash | subject | author | relative date)
+          LOG=$(git log "${FROM}..${TO}" \
+            --pretty=format:"%h | %s | %an | %ar" \
+            --no-merges)
+
+          if [ -z "$LOG" ]; then
+            echo "⚠️  No commits found in range $FROM..$TO"
+            exit 1
+          fi
+
+          COUNT=$(echo "$LOG" | wc -l | tr -d ' ')
+          echo "✅ Found $COUNT commit(s)"
+          echo ""
+          echo "$LOG"
+
+          # Write to output & temp file (avoids shell-escaping issues)
+          echo "$LOG" > /tmp/commits.txt
+          {
+            echo "log<<__EOF__"
+            echo "$LOG"
+            echo "__EOF__"
+            echo "count=$COUNT"
+          } >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────
+      # 2. Call Claude API → bilingual devlog
+      # ─────────────────────────────────────────────
+      - name: 🤖 Generate devlog with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FROM_COMMIT: ${{ github.event.inputs.from_commit }}
+          TO_COMMIT: ${{ github.event.inputs.to_commit }}
+          COMMIT_COUNT: ${{ steps.gitlog.outputs.count }}
+        run: |
+          python3 << 'PYEOF'
+          import os, json, urllib.request, urllib.error, sys
+
+          api_key      = os.environ["ANTHROPIC_API_KEY"]
+          from_commit  = os.environ["FROM_COMMIT"]
+          to_commit    = os.environ["TO_COMMIT"]
+          commit_count = os.environ["COMMIT_COUNT"]
+
+          with open("/tmp/commits.txt") as f:
+              git_log = f.read().strip()
+
+          prompt = f"""Bạn là một technical writer giàu kinh nghiệm.
+Dựa vào {commit_count} commit dưới đây (từ {from_commit} → {to_commit}), hãy tạo một **devlog/changelog song ngữ Việt – Anh** chuyên nghiệp.
+
+Yêu cầu định dạng:
+- Mỗi mục: nội dung **Tiếng Việt** trước, sau đó *(English)*  trên cùng một dòng hoặc dòng kế.
+- Nhóm theo danh mục (chỉ hiển thị danh mục có thay đổi):
+  ✨ Tính năng mới / New Features
+  🐛 Sửa lỗi / Bug Fixes
+  ♻️ Cải tiến / Improvements
+  🔒 Bảo mật / Security
+  🔧 Khác / Others
+- Mỗi dòng gạch đầu dòng ngắn gọn, súc tích (≤ 15 từ mỗi ngôn ngữ).
+- Kết thúc bằng một dòng tóm tắt ngắn bằng song ngữ.
+
+Danh sách commit:
+{git_log}
+
+Chỉ trả về nội dung devlog, không thêm giải thích hay markdown code block."""
+
+          payload = json.dumps({
+              "model": "claude-sonnet-4-20250514",
+              "max_tokens": 2048,
+              "messages": [{"role": "user", "content": prompt}]
+          }).encode("utf-8")
+
+          req = urllib.request.Request(
+              "https://api.anthropic.com/v1/messages",
+              data=payload,
+              headers={
+                  "x-api-key":           api_key,
+                  "anthropic-version":   "2023-06-01",
+                  "content-type":        "application/json",
+              },
+              method="POST",
+          )
+
+          try:
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  data = json.loads(resp.read().decode())
+          except urllib.error.HTTPError as e:
+              body = e.read().decode()
+              print(f"❌ API error {e.code}: {body}", file=sys.stderr)
+              sys.exit(1)
+
+          devlog = "\n".join(
+              block["text"]
+              for block in data.get("content", [])
+              if block.get("type") == "text"
+          ).strip()
+
+          separator = "═" * 60
+          print()
+          print(separator)
+          print(f"  DEVLOG  {from_commit} → {to_commit}  ({commit_count} commits)")
+          print(separator)
+          print()
+          print(devlog)
+          print()
+          print(separator)
+          PYEOF
